@@ -23,4 +23,4 @@ needs = ["build"]
 [tasks.ship]
 program = "bash"
 arguments = ["-c", "echo 'shipping...' && sleep 1 && echo 'Aaand it's gone.'"]
-needs = ["test", "lint"]
+needs = ["test", "other-test", "lint"]
