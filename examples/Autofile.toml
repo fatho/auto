@@ -1,0 +1,26 @@
+# Each task has a unique ID (e.g. `build`)
+[tasks.build]
+program = "bash"
+arguments = ["-c", "echo 'building' && sleep 3 && echo 'done'"]
+
+[tasks.lint]
+program = "bash"
+arguments = ["-c", "echo 'lint' && sleep 1 && echo 'done'"]
+
+[tasks.test]
+program = "bash"
+arguments = ["-c", "echo 'testing' && sleep 2 && echo 'oh no' && false"]
+
+# Tasks can specify dependencies on other tasks that must first complete successfully.
+# For example, we can only run the tests once the build has finished.
+needs = ["build"]
+
+[tasks.other-test]
+program = "bash"
+arguments = ["-c", "echo 'more testing' && sleep 2 && echo 'more testing successful'"]
+needs = ["build"]
+
+[tasks.ship]
+program = "bash"
+arguments = ["-c", "echo 'shipping...' && sleep 1 && echo 'Aaand it's gone.'"]
+needs = ["test", "lint"]

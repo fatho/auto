@@ -4,41 +4,35 @@ use std::ffi::OsString;
 
 mod autofile;
 mod queue;
+use std::path::PathBuf;
+use structopt::StructOpt;
+
+#[derive(Debug, StructOpt)]
+#[structopt(
+    name = "auto",
+    about = "A tool for automatically running task in the right order."
+)]
+struct Opt {
+    /// Input file
+    #[structopt(parse(from_os_str), default_value = "Autofile.toml")]
+    autofile: PathBuf,
+}
 
 fn main() {
-    if let Err(err) = run() {
+    let opt = Opt::from_args();
+    if let Err(err) = run(opt) {
         eprintln!("{}{}{}", Color::Red.prefix(), err, Color::Red.suffix());
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<()> {
-    let example = r#"
-    [tasks.build]
-    program = "bash"
-    arguments = ["-c", "echo 'building' && sleep 3 && echo 'done'"]
-
-    [tasks.lint]
-    program = "bash"
-    arguments = ["-c", "echo 'lint' && sleep 1 && echo 'done'"]
-
-    [tasks.test]
-    program = "bash"
-    arguments = ["-c", "echo 'testing' && sleep 2 && echo 'oh no' && false"]
-    needs = ["build"]
-
-    [tasks.other-test]
-    program = "bash"
-    arguments = ["-c", "echo 'more testing' && sleep 2 && echo 'more testing successful'"]
-    needs = ["build"]
-
-    [tasks.ship]
-    program = "bash"
-    arguments = ["-c", "echo 'shipping...' && sleep 1 && echo 'Aaand it's gone.'"]
-
-    needs = ["test", "lint"]
-    "#;
-    let autofile: autofile::AutoFile = toml::from_str(&example).context(LoadConfig)?;
+fn run(opt: Opt) -> Result<()> {
+    let source = std::fs::read_to_string(&opt.autofile).context(LoadConfig {
+        path: opt.autofile.clone(),
+    })?;
+    let autofile: autofile::AutoFile = toml::from_str(&source).context(ParseConfig {
+        path: opt.autofile,
+    })?;
 
     let mut plan = queue::TaskQueue::new(autofile.tasks.iter().map(|(id, task)| {
         queue::Task {
@@ -68,8 +62,14 @@ fn run() -> Result<()> {
         eprintln!("{} {}", Color::Blue.bold().paint("Running"), task.id);
 
         // Create files for redirecting output
-        let task_stdout_path = outdir.path().join(&task.id.as_str()).with_extension("stdout");
-        let task_stderr_path = outdir.path().join(&task.id.as_str()).with_extension("stderr");
+        let task_stdout_path = outdir
+            .path()
+            .join(&task.id.as_str())
+            .with_extension("stdout");
+        let task_stderr_path = outdir
+            .path()
+            .join(&task.id.as_str())
+            .with_extension("stderr");
         let task_stdout = std::fs::File::create(task_stdout_path).context(Temp)?;
         let task_stderr = std::fs::File::create(task_stderr_path).context(Temp)?;
 
@@ -112,7 +112,12 @@ fn run() -> Result<()> {
         );
     }
 
-    eprintln!("{} successful, {} failed, {} not started", successful.len(), failed.len(), not_started.len());
+    eprintln!(
+        "{} successful, {} failed, {} not started",
+        successful.len(),
+        failed.len(),
+        not_started.len()
+    );
 
     Ok(())
 }
@@ -125,8 +130,17 @@ pub struct Cmd {
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("Could not load config: {}", source))]
-    LoadConfig { source: toml::de::Error },
+    #[snafu(display("Could not load config {}: {}", path.display(), source))]
+    LoadConfig {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Could not parse config {}: {}", path.display(), source))]
+    ParseConfig {
+        path: PathBuf,
+        source: toml::de::Error,
+    },
 
     #[snafu(display("Failed to compute execution plan: {}", source))]
     Planner { source: queue::Error },

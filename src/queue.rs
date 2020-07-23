@@ -189,14 +189,33 @@ impl<P> QueuePlanner<P> {
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("Circular dependency chain: {:?}", chain))]
+    #[snafu(display("Circular dependency chain: {}", DisplayChain { chain }))]
     CircularDependency { chain: Vec<TaskId> },
 
-    #[snafu(display("Dependency {:?} of task {:?} is not known", dependency, dependent))]
+    #[snafu(display("Dependency {:?} of task {:?} is not known", dependency.as_str(), dependent.as_str()))]
     UnknownReference {
         dependency: TaskId,
         dependent: TaskId,
     },
+}
+
+struct DisplayChain<'a> {
+    chain: &'a [TaskId],
+}
+
+impl<'a> Display for DisplayChain<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut ids = self.chain.iter();
+        if let Some(first) = ids.next() {
+            write!(f, "{:?}", first.as_str())?;
+        } else {
+            write!(f, "()")?;
+        }
+        for next in ids {
+            write!(f, " -> {:?}", next.as_str())?;
+        }
+        Ok(())
+    }
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
