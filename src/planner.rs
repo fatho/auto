@@ -27,12 +27,12 @@ pub struct Task<P> {
 
 #[derive(Debug)]
 pub struct PlanQueue<P> {
-    /// All known tasks
-    tasks: HashMap<TaskId, TaskState<P>>,
+    /// All tasks that cannot be executed yet
+    blocked: HashMap<TaskId, TaskState<P>>,
     /// Tasks indexed by reverse dependecy relationship
     needed_by: HashMap<TaskId, Vec<TaskId>>,
     /// Set of tasks that can be run right now
-    available: Vec<TaskId>,
+    available: Vec<Task<P>>,
 }
 
 #[derive(Debug)]
@@ -44,14 +44,14 @@ struct TaskState<P> {
 impl<P> PlanQueue<P> {
     pub fn new() -> Self {
         Self {
-            tasks: HashMap::new(),
+            blocked: HashMap::new(),
             needed_by: HashMap::new(),
             available: Vec::new(),
         }
     }
 
     /// Remove a task from the available set.
-    pub fn pop_available(&mut self) -> Option<TaskId> {
+    pub fn pop_available(&mut self) -> Option<Task<P>> {
         self.available.pop()
     }
 
@@ -60,26 +60,20 @@ impl<P> PlanQueue<P> {
         if let Some(dependents) = self.needed_by.remove(&task) {
             for dependent in dependents {
                 let needs = &mut self
-                    .tasks
+                    .blocked
                     .get_mut(&dependent)
                     .expect("We verified that this must exist at insertion time")
                     .remaining_needs;
                 if needs.remove(task) && needs.is_empty() {
-                    self.available.push(dependent.clone());
+                    let state = self.blocked.remove(&dependent).expect("Known to be there");
+                    self.available.push(state.task);
                 }
             }
         }
     }
 
-    pub fn insert(&mut self, task: Task<P>) -> bool {
-        if self.tasks.contains_key(&task.id) {
-            return false;
-        }
-
+    pub fn insert(&mut self, task: Task<P>) {
         for need in &task.needs {
-            if !self.tasks.contains_key(need) {
-                return false;
-            }
             self.needed_by
                 .entry(need.clone())
                 .or_default()
@@ -87,16 +81,15 @@ impl<P> PlanQueue<P> {
         }
 
         if task.needs.is_empty() {
-            self.available.push(task.id.clone());
+            self.available.push(task);
+        } else {
+            self.blocked.insert(
+                task.id.clone(),
+                TaskState {
+                    remaining_needs: task.needs.iter().cloned().collect(),
+                    task,
+                },
+            );
         }
-        self.tasks.insert(
-            task.id.clone(),
-            TaskState {
-                remaining_needs: task.needs.iter().cloned().collect(),
-                task,
-            },
-        );
-
-        true
     }
 }

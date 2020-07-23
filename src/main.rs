@@ -39,8 +39,9 @@ fn run() -> Result<()> {
     println!("{:?}", plan);
 
     while let Some(task) = plan.pop_available() {
-        println!("running {} ... done", task);
-        plan.mark_done(&task);
+        println!("running {} ... ", task.id);
+        // std::process::Command::new(task.)
+        plan.mark_done(&task.id);
     }
 
     Ok(())
@@ -112,7 +113,7 @@ impl<'a> TopoPlanner<'a> {
             self.topo(needed)?;
         }
         // Then insert current
-        let success = self.plan.insert(planner::Task {
+        self.plan.insert(planner::Task {
             id: TaskId(current.to_owned()),
             needs: task.needs.iter().map(|id| TaskId(id.to_owned())).collect(),
             payload: Cmd {
@@ -120,10 +121,6 @@ impl<'a> TopoPlanner<'a> {
                 arguments: task.arguments.iter().map(|s| s.into()).collect(),
             },
         });
-        assert!(
-            success,
-            "Insertion should have succeeded because all invariants were validated"
-        );
 
         self.stack.pop();
         self.visited.insert(current);
