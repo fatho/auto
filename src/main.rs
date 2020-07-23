@@ -56,6 +56,10 @@ fn run() -> Result<()> {
         }
     }
 
+    for remaining in plan.give_up() {
+        eprintln!("not running {}", remaining.id);
+    }
+
     Ok(())
 }
 

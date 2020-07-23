@@ -72,6 +72,11 @@ impl<P> PlanQueue<P> {
         }
     }
 
+    /// Stop processing and return the remaining tasks.
+    pub fn give_up(self) -> Vec<Task<P>> {
+        self.blocked.into_iter().map(|(_, state)| state.task).collect()
+    }
+
     pub fn insert(&mut self, task: Task<P>) {
         for need in &task.needs {
             self.needed_by
