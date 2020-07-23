@@ -56,13 +56,25 @@ fn run() -> Result<()> {
     }))
     .context(Planner)?;
 
-    eprintln!("{:?}", plan);
+    eprintln!("Generated plan for {} tasks", autofile.tasks.len());
+
+    let outdir = tempfile::tempdir().context(Temp)?;
+    eprintln!("Logging output to {}", outdir.path().display());
 
     while let Some(task) = plan.pop_available() {
-        eprintln!("{} ... {}", Color::Blue.bold().paint("running"), task.id);
+        eprintln!("{} {}", Color::Blue.bold().paint("Running"), task.id);
 
+        // Create files for redirecting output
+        let task_stdout_path = outdir.path().join(&task.id.as_str()).with_extension("stdout");
+        let task_stderr_path = outdir.path().join(&task.id.as_str()).with_extension("stderr");
+        let task_stdout = std::fs::File::create(task_stdout_path).context(Temp)?;
+        let task_stderr = std::fs::File::create(task_stderr_path).context(Temp)?;
+
+        let start_time = std::time::Instant::now();
         let mut cmd = std::process::Command::new(&task.payload.program)
             .args(&task.payload.arguments)
+            .stdout(task_stdout)
+            .stderr(task_stderr)
             .spawn()
             .context(TaskStart {
                 id: task.id.clone(),
@@ -71,13 +83,15 @@ fn run() -> Result<()> {
         let status = cmd.wait().context(TaskWait {
             id: task.id.clone(),
         })?;
+        let duration = start_time.elapsed();
 
-        if status.success() {
+        let msg = if status.success() {
             plan.mark_done(&task.id);
-            eprintln!("{} {}", Color::Green.bold().paint("success"), task.id);
+            Color::Green.bold().paint("Finished")
         } else {
-            eprintln!("{} {}", Color::Red.bold().paint("failed"), task.id);
-        }
+            Color::Red.bold().paint("Failed")
+        };
+        eprintln!("{} {} (took {:.2}s)", msg, task.id, duration.as_secs_f64());
     }
 
     for remaining in plan.give_up() {
@@ -104,6 +118,9 @@ pub enum Error {
 
     #[snafu(display("Failed to compute execution plan: {}", source))]
     Planner { source: queue::Error },
+
+    #[snafu(display("Failed to create temporary output: {}", source))]
+    Temp { source: std::io::Error },
 
     #[snafu(display("Failed to spawn {:?}: {}", id, source))]
     TaskStart {

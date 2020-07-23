@@ -11,3 +11,4 @@ ansi_term = "0.12.1"
 snafu = "0.6.8"
 toml = "0.5.6"
 serde = { version = "1.0", features = ["derive"] }
+tempfile = "3.1.0"
