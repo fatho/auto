@@ -3,7 +3,7 @@ use ansi_term::Color;
 use snafu::{ResultExt, Snafu};
 
 mod autofile;
-mod planner;
+mod queue;
 
 fn main() {
     if let Err(err) = run() {
@@ -40,7 +40,7 @@ fn run() -> Result<()> {
     "#;
     let autofile: autofile::AutoFile = toml::from_str(&example).context(LoadConfig)?;
 
-    let mut plan = TopoPlanner::new(&autofile).plan()?;
+    let mut plan = Topoqueue::new(&autofile).plan()?;
 
     eprintln!("{:?}", plan);
 
@@ -69,26 +69,26 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-struct TopoPlanner<'a> {
+struct Topoqueue<'a> {
     autofile: &'a autofile::AutoFile,
     visited: HashSet<&'a str>,
     visiting: HashSet<&'a str>,
-    plan: planner::PlanQueue<Cmd>,
+    plan: queue::TaskQueue<Cmd>,
     stack: Vec<&'a str>,
 }
 
-impl<'a> TopoPlanner<'a> {
-    pub fn new(autofile: &'a autofile::AutoFile) -> TopoPlanner {
+impl<'a> Topoqueue<'a> {
+    pub fn new(autofile: &'a autofile::AutoFile) -> Topoqueue {
         Self {
             autofile,
             visited: HashSet::new(),
             visiting: HashSet::new(),
-            plan: planner::PlanQueue::new(),
+            plan: queue::TaskQueue::new(),
             stack: Vec::new(),
         }
     }
 
-    pub fn plan(mut self) -> Result<planner::PlanQueue<Cmd>> {
+    pub fn plan(mut self) -> Result<queue::TaskQueue<Cmd>> {
         for id in self.autofile.tasks.keys() {
             self.topo(&id)?;
         }
@@ -96,7 +96,7 @@ impl<'a> TopoPlanner<'a> {
     }
 
     fn topo(&mut self, current: &'a str) -> Result<()> {
-        use planner::TaskId;
+        use queue::TaskId;
 
         if self.visited.contains(current) {
             return Ok(());
@@ -135,7 +135,7 @@ impl<'a> TopoPlanner<'a> {
             self.topo(needed)?;
         }
         // Then insert current
-        self.plan.insert(planner::Task {
+        self.plan.insert(queue::Task {
             id: TaskId(current.to_owned()),
             needs: task.needs.iter().map(|id| TaskId(id.to_owned())).collect(),
             payload: Cmd {
@@ -171,10 +171,10 @@ pub enum Error {
     },
 
     #[snafu(display("Failed to spawn {:?}: {}", id, source))]
-    TaskStart { id: planner::TaskId,  source: std::io::Error },
+    TaskStart { id: queue::TaskId,  source: std::io::Error },
 
     #[snafu(display("Failed to wait for {:?}: {}", id, source))]
-    TaskWait { id: planner::TaskId,  source: std::io::Error },
+    TaskWait { id: queue::TaskId,  source: std::io::Error },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;

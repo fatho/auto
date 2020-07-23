@@ -26,7 +26,7 @@ pub struct Task<P> {
 }
 
 #[derive(Debug)]
-pub struct PlanQueue<P> {
+pub struct TaskQueue<P> {
     /// All tasks that cannot be executed yet
     blocked: HashMap<TaskId, TaskState<P>>,
     /// Tasks indexed by reverse dependecy relationship
@@ -41,7 +41,7 @@ struct TaskState<P> {
     remaining_needs: HashSet<TaskId>,
 }
 
-impl<P> PlanQueue<P> {
+impl<P> TaskQueue<P> {
     pub fn new() -> Self {
         Self {
             blocked: HashMap::new(),
