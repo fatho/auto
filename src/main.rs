@@ -1,5 +1,5 @@
 use std::{ffi::OsString, collections::HashSet};
-
+use ansi_term::Color;
 use snafu::{ResultExt, Snafu};
 
 mod autofile;
@@ -7,7 +7,7 @@ mod planner;
 
 fn main() {
     if let Err(err) = run() {
-        eprintln!("{}", err);
+        eprintln!("{}{}{}", Color::Red.prefix(), err, Color::Red.suffix());
         std::process::exit(1);
     }
 }
@@ -39,7 +39,7 @@ fn run() -> Result<()> {
     eprintln!("{:?}", plan);
 
     while let Some(task) = plan.pop_available() {
-        eprintln!("running {} ... ", task.id);
+        eprintln!("{} ... {}", Color::Blue.bold().paint("running"), task.id);
 
         let mut cmd = std::process::Command::new(&task.payload.program)
             .args(&task.payload.arguments)
@@ -50,14 +50,14 @@ fn run() -> Result<()> {
 
         if status.success() {
             plan.mark_done(&task.id);
-            eprintln!("success {}", task.id);
+            eprintln!("{} {}", Color::Green.bold().paint("success"), task.id);
         } else {
-            eprintln!("failed {}", task.id);
+            eprintln!("{} {}", Color::Red.bold().paint("failed"), task.id);
         }
     }
 
     for remaining in plan.give_up() {
-        eprintln!("not running {}", remaining.id);
+        eprintln!("{} {}", Color::Red.bold().paint("not running"), remaining.id);
     }
 
     Ok(())
