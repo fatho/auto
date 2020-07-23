@@ -1,10 +1,9 @@
-use std::{ffi::OsString};
 use ansi_term::Color;
 use snafu::{ResultExt, Snafu};
+use std::ffi::OsString;
 
 mod autofile;
 mod queue;
-
 
 fn main() {
     if let Err(err) = run() {
@@ -44,13 +43,18 @@ fn run() -> Result<()> {
     let mut plan = queue::TaskQueue::new(autofile.tasks.iter().map(|(id, task)| {
         queue::Task {
             id: queue::TaskId(id.clone()),
-            needs: task.needs.iter().map(|id| queue::TaskId(id.to_owned())).collect(),
+            needs: task
+                .needs
+                .iter()
+                .map(|id| queue::TaskId(id.to_owned()))
+                .collect(),
             payload: Cmd {
                 program: (&task.program).into(),
                 arguments: task.arguments.iter().map(|s| s.into()).collect(),
             },
         }
-    })).context(Planner)?;
+    }))
+    .context(Planner)?;
 
     eprintln!("{:?}", plan);
 
@@ -60,9 +64,13 @@ fn run() -> Result<()> {
         let mut cmd = std::process::Command::new(&task.payload.program)
             .args(&task.payload.arguments)
             .spawn()
-            .context(TaskStart { id: task.id.clone() })?;
+            .context(TaskStart {
+                id: task.id.clone(),
+            })?;
 
-        let status = cmd.wait().context(TaskWait { id: task.id.clone() })?;
+        let status = cmd.wait().context(TaskWait {
+            id: task.id.clone(),
+        })?;
 
         if status.success() {
             plan.mark_done(&task.id);
@@ -73,7 +81,11 @@ fn run() -> Result<()> {
     }
 
     for remaining in plan.give_up() {
-        eprintln!("{} {}", Color::Red.bold().paint("not running"), remaining.id);
+        eprintln!(
+            "{} {}",
+            Color::Red.bold().paint("not running"),
+            remaining.id
+        );
     }
 
     Ok(())
@@ -94,10 +106,16 @@ pub enum Error {
     Planner { source: queue::Error },
 
     #[snafu(display("Failed to spawn {:?}: {}", id, source))]
-    TaskStart { id: queue::TaskId,  source: std::io::Error },
+    TaskStart {
+        id: queue::TaskId,
+        source: std::io::Error,
+    },
 
     #[snafu(display("Failed to wait for {:?}: {}", id, source))]
-    TaskWait { id: queue::TaskId,  source: std::io::Error },
+    TaskWait {
+        id: queue::TaskId,
+        source: std::io::Error,
+    },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;

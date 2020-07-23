@@ -1,6 +1,6 @@
+use snafu::Snafu;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
-use snafu::Snafu;
 
 /// Unique ID of tasks to be run.
 /// TODO: make this type more lightweight to clone and hash
@@ -52,9 +52,8 @@ impl<P> Default for TaskQueue<P> {
     }
 }
 
-
 impl<P> TaskQueue<P> {
-    pub fn new<I: IntoIterator<Item=Task<P>>>(tasks: I) -> Result<Self> {
+    pub fn new<I: IntoIterator<Item = Task<P>>>(tasks: I) -> Result<Self> {
         QueuePlanner::new(tasks).plan()
     }
 
@@ -82,7 +81,10 @@ impl<P> TaskQueue<P> {
 
     /// Stop processing and return the remaining tasks.
     pub fn give_up(self) -> Vec<Task<P>> {
-        self.blocked.into_iter().map(|(_, state)| state.task).collect()
+        self.blocked
+            .into_iter()
+            .map(|(_, state)| state.task)
+            .collect()
     }
 
     fn insert(&mut self, task: Task<P>) {
@@ -107,8 +109,7 @@ impl<P> TaskQueue<P> {
     }
 }
 
-
-
+/// Compute the dependency queue using topological sorting based on depth-first search.
 struct QueuePlanner<P> {
     taskmap: HashMap<TaskId, Task<P>>,
     visited: HashSet<TaskId>,
@@ -118,7 +119,7 @@ struct QueuePlanner<P> {
 }
 
 impl<P> QueuePlanner<P> {
-    pub fn new<I: IntoIterator<Item=Task<P>>>(tasks: I) -> Self {
+    pub fn new<I: IntoIterator<Item = Task<P>>>(tasks: I) -> Self {
         let taskmap = tasks.into_iter().map(|t| (t.id.clone(), t)).collect();
         Self {
             taskmap,

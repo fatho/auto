@@ -8,6 +8,7 @@ in
       rustc
       cargo
       rustfmt
+      clippy
       cargo-audit
       niv
     ];
