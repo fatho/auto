@@ -61,6 +61,9 @@ fn run() -> Result<()> {
     let outdir = tempfile::tempdir().context(Temp)?;
     eprintln!("Logging output to {}", outdir.path().display());
 
+    let mut successful = Vec::new();
+    let mut failed = Vec::new();
+
     while let Some(task) = plan.pop_available() {
         eprintln!("{} {}", Color::Blue.bold().paint("Running"), task.id);
 
@@ -86,21 +89,30 @@ fn run() -> Result<()> {
         let duration = start_time.elapsed();
 
         let msg = if status.success() {
-            plan.mark_done(&task.id);
             Color::Green.bold().paint("Finished")
         } else {
             Color::Red.bold().paint("Failed")
         };
         eprintln!("{} {} (took {:.2}s)", msg, task.id, duration.as_secs_f64());
+
+        if status.success() {
+            plan.mark_done(&task.id);
+            successful.push(task);
+        } else {
+            failed.push(task);
+        };
     }
 
-    for remaining in plan.give_up() {
+    let not_started = plan.give_up();
+    for remaining in &not_started {
         eprintln!(
             "{} {}",
             Color::Red.bold().paint("not running"),
             remaining.id
         );
     }
+
+    eprintln!("{} successful, {} failed, {} not started", successful.len(), failed.len(), not_started.len());
 
     Ok(())
 }
