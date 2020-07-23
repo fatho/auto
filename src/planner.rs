@@ -1,7 +1,8 @@
-use std::collections::HashMap;
-use std::ffi::OsString;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 
+/// Unique ID of tasks to be run.
+/// TODO: make this type more lightweight to clone and hash
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct TaskId(pub String);
 
@@ -18,25 +19,30 @@ impl From<&str> for TaskId {
 }
 
 #[derive(Debug)]
-pub struct Task {
+pub struct Task<P> {
     pub id: TaskId,
-    pub program: OsString,
-    pub arguments: Vec<OsString>,
     pub needs: Vec<TaskId>,
+    pub payload: P,
 }
 
 #[derive(Debug)]
-pub struct PlanQueue {
+pub struct PlanQueue<P> {
     /// All known tasks
-    tasks: HashMap<TaskId, Task>,
+    tasks: HashMap<TaskId, TaskState<P>>,
     /// Tasks indexed by reverse dependecy relationship
     needed_by: HashMap<TaskId, Vec<TaskId>>,
     /// Set of tasks that can be run right now
     available: Vec<TaskId>,
 }
 
-impl PlanQueue {
-    pub fn new() -> PlanQueue {
+#[derive(Debug)]
+struct TaskState<P> {
+    task: Task<P>,
+    remaining_needs: HashSet<TaskId>,
+}
+
+impl<P> PlanQueue<P> {
+    pub fn new() -> Self {
         Self {
             tasks: HashMap::new(),
             needed_by: HashMap::new(),
@@ -57,17 +63,15 @@ impl PlanQueue {
                     .tasks
                     .get_mut(&dependent)
                     .expect("We verified that this must exist at insertion time")
-                    .needs;
-                needs.retain(|x| x != task);
-                // TODO: need to remember original needs?
-                if needs.is_empty() {
+                    .remaining_needs;
+                if needs.remove(task) && needs.is_empty() {
                     self.available.push(dependent.clone());
                 }
             }
         }
     }
 
-    pub fn insert(&mut self, task: Task) -> bool {
+    pub fn insert(&mut self, task: Task<P>) -> bool {
         if self.tasks.contains_key(&task.id) {
             return false;
         }
@@ -85,7 +89,13 @@ impl PlanQueue {
         if task.needs.is_empty() {
             self.available.push(task.id.clone());
         }
-        self.tasks.insert(task.id.clone(), task);
+        self.tasks.insert(
+            task.id.clone(),
+            TaskState {
+                remaining_needs: task.needs.iter().cloned().collect(),
+                task,
+            },
+        );
 
         true
     }

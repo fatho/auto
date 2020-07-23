@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{ffi::OsString, collections::HashSet};
 
 use snafu::{ResultExt, Snafu};
 
@@ -50,7 +50,7 @@ struct TopoPlanner<'a> {
     autofile: &'a autofile::AutoFile,
     visited: HashSet<&'a str>,
     visiting: HashSet<&'a str>,
-    plan: planner::PlanQueue,
+    plan: planner::PlanQueue<Cmd>,
     stack: Vec<&'a str>,
 }
 
@@ -65,7 +65,7 @@ impl<'a> TopoPlanner<'a> {
         }
     }
 
-    pub fn plan(mut self) -> Result<planner::PlanQueue> {
+    pub fn plan(mut self) -> Result<planner::PlanQueue<Cmd>> {
         for id in self.autofile.tasks.keys() {
             self.topo(&id)?;
         }
@@ -97,7 +97,14 @@ impl<'a> TopoPlanner<'a> {
             .tasks
             .get(current)
             .ok_or_else(|| Error::UnknownReference {
-                id: current.to_owned(),
+                dependency: current.to_owned(),
+                dependent: self
+                    .stack
+                    .iter()
+                    .copied()
+                    .nth_back(1)
+                    .expect("Must have a parent, otherwise it would exist")
+                    .to_owned(),
             })?;
 
         // Insert all dependencies first
@@ -107,9 +114,11 @@ impl<'a> TopoPlanner<'a> {
         // Then insert current
         let success = self.plan.insert(planner::Task {
             id: TaskId(current.to_owned()),
-            program: (&task.program).into(),
-            arguments: task.arguments.iter().map(|s| s.into()).collect(),
             needs: task.needs.iter().map(|id| TaskId(id.to_owned())).collect(),
+            payload: Cmd {
+                program: (&task.program).into(),
+                arguments: task.arguments.iter().map(|s| s.into()).collect(),
+            },
         });
         assert!(
             success,
@@ -122,6 +131,12 @@ impl<'a> TopoPlanner<'a> {
     }
 }
 
+#[derive(Debug)]
+pub struct Cmd {
+    pub program: OsString,
+    pub arguments: Vec<OsString>,
+}
+
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("Could not load config: {}", source))]
@@ -130,8 +145,11 @@ pub enum Error {
     #[snafu(display("Circular dependency chain: {:?}", chain))]
     CircularDependency { chain: Vec<String> },
 
-    #[snafu(display("Referenced task {} is not known", id))]
-    UnknownReference { id: String },
+    #[snafu(display("Dependency {:?} of task {:?} is not known", dependency, dependent))]
+    UnknownReference {
+        dependency: String,
+        dependent: String,
+    },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
