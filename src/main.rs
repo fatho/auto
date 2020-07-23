@@ -7,7 +7,7 @@ mod planner;
 
 fn main() {
     if let Err(err) = run() {
-        println!("{}", err);
+        eprintln!("{}", err);
         std::process::exit(1);
     }
 }
@@ -15,19 +15,19 @@ fn main() {
 fn run() -> Result<()> {
     let example = r#"
     [tasks.build]
-    program = "/usr/bin/echo"
+    program = "echo"
     arguments = ["-e", "building\nreally\nhard"]
 
     [tasks.lint]
-    program = "/usr/bin/echo"
+    program = "echo"
     arguments = ["-e", "some linting"]
 
     [tasks.test]
-    program = "/usr/bin/true"
+    program = "false"
     needs = ["build"]
 
     [tasks.ship]
-    program = "/usr/bin/echo"
+    program = "echo"
     arguments = ["-e", "shipping now\nand done"]
 
     needs = ["test", "lint"]
@@ -36,12 +36,24 @@ fn run() -> Result<()> {
 
     let mut plan = TopoPlanner::new(&autofile).plan()?;
 
-    println!("{:?}", plan);
+    eprintln!("{:?}", plan);
 
     while let Some(task) = plan.pop_available() {
-        println!("running {} ... ", task.id);
-        // std::process::Command::new(task.)
-        plan.mark_done(&task.id);
+        eprintln!("running {} ... ", task.id);
+
+        let mut cmd = std::process::Command::new(&task.payload.program)
+            .args(&task.payload.arguments)
+            .spawn()
+            .context(TaskStart { id: task.id.clone() })?;
+
+        let status = cmd.wait().context(TaskWait { id: task.id.clone() })?;
+
+        if status.success() {
+            plan.mark_done(&task.id);
+            eprintln!("success {}", task.id);
+        } else {
+            eprintln!("failed {}", task.id);
+        }
     }
 
     Ok(())
@@ -147,6 +159,12 @@ pub enum Error {
         dependency: String,
         dependent: String,
     },
+
+    #[snafu(display("Failed to spawn {:?}: {}", id, source))]
+    TaskStart { id: planner::TaskId,  source: std::io::Error },
+
+    #[snafu(display("Failed to wait for {:?}: {}", id, source))]
+    TaskWait { id: planner::TaskId,  source: std::io::Error },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
