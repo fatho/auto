@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
+use snafu::Snafu;
 
 /// Unique ID of tasks to be run.
 /// TODO: make this type more lightweight to clone and hash
@@ -41,13 +42,20 @@ struct TaskState<P> {
     remaining_needs: HashSet<TaskId>,
 }
 
-impl<P> TaskQueue<P> {
-    pub fn new() -> Self {
+impl<P> Default for TaskQueue<P> {
+    fn default() -> Self {
         Self {
             blocked: HashMap::new(),
             needed_by: HashMap::new(),
             available: Vec::new(),
         }
+    }
+}
+
+
+impl<P> TaskQueue<P> {
+    pub fn new<I: IntoIterator<Item=Task<P>>>(tasks: I) -> Result<Self> {
+        QueuePlanner::new(tasks).plan()
     }
 
     /// Remove a task from the available set.
@@ -77,7 +85,7 @@ impl<P> TaskQueue<P> {
         self.blocked.into_iter().map(|(_, state)| state.task).collect()
     }
 
-    pub fn insert(&mut self, task: Task<P>) {
+    fn insert(&mut self, task: Task<P>) {
         for need in &task.needs {
             self.needed_by
                 .entry(need.clone())
@@ -98,3 +106,90 @@ impl<P> TaskQueue<P> {
         }
     }
 }
+
+
+
+struct QueuePlanner<P> {
+    taskmap: HashMap<TaskId, Task<P>>,
+    visited: HashSet<TaskId>,
+    visiting: HashSet<TaskId>,
+    plan: TaskQueue<P>,
+    stack: Vec<TaskId>,
+}
+
+impl<P> QueuePlanner<P> {
+    pub fn new<I: IntoIterator<Item=Task<P>>>(tasks: I) -> Self {
+        let taskmap = tasks.into_iter().map(|t| (t.id.clone(), t)).collect();
+        Self {
+            taskmap,
+            visited: HashSet::new(),
+            visiting: HashSet::new(),
+            plan: TaskQueue::default(),
+            stack: Vec::new(),
+        }
+    }
+
+    fn plan(mut self) -> Result<TaskQueue<P>> {
+        while let Some(key) = self.taskmap.keys().next().cloned() {
+            self.topo(&key)?;
+        }
+        Ok(self.plan)
+    }
+
+    fn topo(&mut self, current: &TaskId) -> Result<()> {
+        if self.visited.contains(current) {
+            return Ok(());
+        } else if !self.visiting.insert(current.clone()) {
+            let mut chain = vec![current.to_owned()];
+            for prev in self.stack.iter().rev() {
+                chain.push((*prev).to_owned());
+                if prev == current {
+                    break;
+                }
+            }
+            chain.reverse();
+
+            // We arrived at the same node `current` while already visiting `current`
+            return Err(Error::CircularDependency { chain });
+        }
+        self.stack.push(current.clone());
+
+        let task = self
+            .taskmap
+            .remove(current)
+            .ok_or_else(|| Error::UnknownReference {
+                dependency: current.to_owned(),
+                dependent: self
+                    .stack
+                    .iter()
+                    .nth_back(1)
+                    .expect("Must have a parent, otherwise it would exist")
+                    .to_owned(),
+            })?;
+
+        // Insert all dependencies first
+        for needed in task.needs.iter() {
+            self.topo(needed)?;
+        }
+        // Then insert current
+        self.plan.insert(task);
+
+        self.stack.pop();
+        self.visited.insert(current.clone());
+        Ok(())
+    }
+}
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("Circular dependency chain: {:?}", chain))]
+    CircularDependency { chain: Vec<TaskId> },
+
+    #[snafu(display("Dependency {:?} of task {:?} is not known", dependency, dependent))]
+    UnknownReference {
+        dependency: TaskId,
+        dependent: TaskId,
+    },
+}
+
+type Result<T, E = Error> = std::result::Result<T, E>;

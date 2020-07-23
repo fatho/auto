@@ -1,9 +1,10 @@
-use std::{ffi::OsString, collections::HashSet};
+use std::{ffi::OsString};
 use ansi_term::Color;
 use snafu::{ResultExt, Snafu};
 
 mod autofile;
 mod queue;
+
 
 fn main() {
     if let Err(err) = run() {
@@ -40,7 +41,16 @@ fn run() -> Result<()> {
     "#;
     let autofile: autofile::AutoFile = toml::from_str(&example).context(LoadConfig)?;
 
-    let mut plan = Topoqueue::new(&autofile).plan()?;
+    let mut plan = queue::TaskQueue::new(autofile.tasks.iter().map(|(id, task)| {
+        queue::Task {
+            id: queue::TaskId(id.clone()),
+            needs: task.needs.iter().map(|id| queue::TaskId(id.to_owned())).collect(),
+            payload: Cmd {
+                program: (&task.program).into(),
+                arguments: task.arguments.iter().map(|s| s.into()).collect(),
+            },
+        }
+    })).context(Planner)?;
 
     eprintln!("{:?}", plan);
 
@@ -69,87 +79,6 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-struct Topoqueue<'a> {
-    autofile: &'a autofile::AutoFile,
-    visited: HashSet<&'a str>,
-    visiting: HashSet<&'a str>,
-    plan: queue::TaskQueue<Cmd>,
-    stack: Vec<&'a str>,
-}
-
-impl<'a> Topoqueue<'a> {
-    pub fn new(autofile: &'a autofile::AutoFile) -> Topoqueue {
-        Self {
-            autofile,
-            visited: HashSet::new(),
-            visiting: HashSet::new(),
-            plan: queue::TaskQueue::new(),
-            stack: Vec::new(),
-        }
-    }
-
-    pub fn plan(mut self) -> Result<queue::TaskQueue<Cmd>> {
-        for id in self.autofile.tasks.keys() {
-            self.topo(&id)?;
-        }
-        Ok(self.plan)
-    }
-
-    fn topo(&mut self, current: &'a str) -> Result<()> {
-        use queue::TaskId;
-
-        if self.visited.contains(current) {
-            return Ok(());
-        } else if !self.visiting.insert(current) {
-            let mut chain = vec![current.to_owned()];
-            for prev in self.stack.iter().rev() {
-                chain.push((*prev).to_owned());
-                if *prev == current {
-                    break;
-                }
-            }
-            chain.reverse();
-
-            // We arrived at the same node `current` while already visiting `current`
-            return Err(Error::CircularDependency { chain });
-        }
-        self.stack.push(current);
-
-        let task = self
-            .autofile
-            .tasks
-            .get(current)
-            .ok_or_else(|| Error::UnknownReference {
-                dependency: current.to_owned(),
-                dependent: self
-                    .stack
-                    .iter()
-                    .copied()
-                    .nth_back(1)
-                    .expect("Must have a parent, otherwise it would exist")
-                    .to_owned(),
-            })?;
-
-        // Insert all dependencies first
-        for needed in task.needs.iter() {
-            self.topo(needed)?;
-        }
-        // Then insert current
-        self.plan.insert(queue::Task {
-            id: TaskId(current.to_owned()),
-            needs: task.needs.iter().map(|id| TaskId(id.to_owned())).collect(),
-            payload: Cmd {
-                program: (&task.program).into(),
-                arguments: task.arguments.iter().map(|s| s.into()).collect(),
-            },
-        });
-
-        self.stack.pop();
-        self.visited.insert(current);
-        Ok(())
-    }
-}
-
 #[derive(Debug)]
 pub struct Cmd {
     pub program: OsString,
@@ -161,14 +90,8 @@ pub enum Error {
     #[snafu(display("Could not load config: {}", source))]
     LoadConfig { source: toml::de::Error },
 
-    #[snafu(display("Circular dependency chain: {:?}", chain))]
-    CircularDependency { chain: Vec<String> },
-
-    #[snafu(display("Dependency {:?} of task {:?} is not known", dependency, dependent))]
-    UnknownReference {
-        dependency: String,
-        dependent: String,
-    },
+    #[snafu(display("Failed to compute execution plan: {}", source))]
+    Planner { source: queue::Error },
 
     #[snafu(display("Failed to spawn {:?}: {}", id, source))]
     TaskStart { id: queue::TaskId,  source: std::io::Error },
