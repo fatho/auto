@@ -15,20 +15,26 @@ fn main() {
 fn run() -> Result<()> {
     let example = r#"
     [tasks.build]
-    program = "echo"
-    arguments = ["-e", "building\nreally\nhard"]
+    program = "bash"
+    arguments = ["-c", "echo 'building' && sleep 3 && echo 'done'"]
 
     [tasks.lint]
-    program = "echo"
-    arguments = ["-e", "some linting"]
+    program = "bash"
+    arguments = ["-c", "echo 'lint' && sleep 1 && echo 'done'"]
 
     [tasks.test]
-    program = "false"
+    program = "bash"
+    arguments = ["-c", "echo 'testing' && sleep 2 && echo 'oh no' && false"]
+    needs = ["build"]
+
+    [tasks.other-test]
+    program = "bash"
+    arguments = ["-c", "echo 'more testing' && sleep 2 && echo 'more testing successful'"]
     needs = ["build"]
 
     [tasks.ship]
-    program = "echo"
-    arguments = ["-e", "shipping now\nand done"]
+    program = "bash"
+    arguments = ["-c", "echo 'shipping...' && sleep 1 && echo 'Aaand it's gone.'"]
 
     needs = ["test", "lint"]
     "#;
