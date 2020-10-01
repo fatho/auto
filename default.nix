@@ -26,6 +26,6 @@
 
     buildInputs = [sox];
 
-    cargoSha256 = "0jkfbw364xd68ryh4sxlj7ysjwzign7hzblvnbl2mkhmfxsapx1z";
+    cargoSha256 = "0a42mkciysf3ywpnyf7dfli6zmr0kmljrxkc5i1hxmxkynvmjz77";
   };
 }
